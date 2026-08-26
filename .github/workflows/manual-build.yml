@@ -91,7 +91,7 @@ jobs:
             -PVERSION_NAME=${{ steps.version.outputs.name }} \
             --parallel --build-cache
 
-      - name: Verify and rename APK
+      - name: Verify APK
         id: apk
         run: |
           APK_SRC=$(find app/build/outputs/apk -name "*.apk" | head -1)
@@ -117,7 +117,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.version.outputs.name }}-debug-${{ steps.version.outputs.date }}
+          name: debug-${{ steps.version.outputs.code }}-${{ steps.version.outputs.name }}
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 7
           
