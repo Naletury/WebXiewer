@@ -48,10 +48,11 @@ public class SettingsActivity extends AppCompatActivity {
     public static final String KEY_NO_RELOAD_ON_BACK = "no_reload_on_back";
     public static final String KEY_USER_AGENT = "user_agent";
 
-    private static final String UA_CHROME_DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-    private static final String UA_SAFARI_IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
-    private static final String UA_CHROME_MOBILE = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
-    private static final String UA_TWITTER_APP = "Mozilla/5.0 (Linux; Android 13; Pixel 7 Build/TQ3A.230901.001; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0.0.0 Mobile Safari/537.36 TwitterAndroid";
+    private static final String UA_WINDOWS_CHROME = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    private static final String UA_WINDOWS_EDGE = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.2210.91";
+    private static final String UA_ANDROID_CHROME = "Mozilla/5.0 (Linux; Android 14; 23117RK6CC) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.43 Mobile Safari/537.36";
+    private static final String UA_MACOS_SAFARI = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15";
+    private static final String UA_IOS_SAFARI = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1";
 
     private MaterialSwitch switchDynamicColor;
     private MaterialSwitch switchBackIntercept;
@@ -277,7 +278,7 @@ public class SettingsActivity extends AppCompatActivity {
         try {
             defaultSystemUa = WebSettings.getDefaultUserAgent(this);
         } catch (Exception e) {
-            defaultSystemUa = UA_CHROME_MOBILE;
+            defaultSystemUa = UA_ANDROID_CHROME;
         }
 
         String currentUa = prefs.getString(KEY_USER_AGENT, defaultSystemUa);
@@ -307,7 +308,6 @@ public class SettingsActivity extends AppCompatActivity {
                 .setPositiveButton("保存", (d, which) -> {
                     String newUa = input.getText().toString().trim();
                     prefs.edit().putString(KEY_USER_AGENT, newUa).apply();
-                    Toast.makeText(this, "User-Agent 已保存", Toast.LENGTH_SHORT).show();
                     showRestartDialog(this::triggerAppRestart, null);
                 })
                 .setNegativeButton("取消", null)
@@ -320,31 +320,35 @@ public class SettingsActivity extends AppCompatActivity {
         if (neutralBtn != null) {
             neutralBtn.setOnClickListener(v -> {
                 PopupMenu templateMenu = new PopupMenu(this, v);
-                templateMenu.getMenu().add(0, 0, 0, "桌面版 Chrome");
-                templateMenu.getMenu().add(0, 1, 1, "iPhone Safari");
-                templateMenu.getMenu().add(0, 2, 2, "移动版 Chrome");
-                templateMenu.getMenu().add(0, 3, 3, "Twitter Android 原生");
-                templateMenu.getMenu().add(0, 4, 4, "恢复系统默认");
+                templateMenu.getMenu().add(0, 0, 0, "Windows (Chrome)");
+                templateMenu.getMenu().add(0, 1, 1, "Windows (Edge/IE 11)");
+                templateMenu.getMenu().add(0, 2, 2, "Android (Chrome)");
+                templateMenu.getMenu().add(0, 3, 3, "macOS (Safari)");
+                templateMenu.getMenu().add(0, 4, 4, "iOS (Safari)");
+                templateMenu.getMenu().add(0, 5, 5, "系统默认");
 
                 templateMenu.setOnMenuItemClickListener(item -> {
                     switch (item.getItemId()) {
                         case 0:
-                            input.setText(UA_CHROME_DESKTOP);
+                            input.setText(UA_WINDOWS_CHROME);
                             break;
                         case 1:
-                            input.setText(UA_SAFARI_IPHONE);
+                            input.setText(UA_WINDOWS_EDGE);
                             break;
                         case 2:
-                            input.setText(UA_CHROME_MOBILE);
+                            input.setText(UA_ANDROID_CHROME);
                             break;
                         case 3:
-                            input.setText(UA_TWITTER_APP);
+                            input.setText(UA_MACOS_SAFARI);
                             break;
                         case 4:
+                            input.setText(UA_IOS_SAFARI);
+                            break;
+                        case 5:
                             try {
                                 input.setText(WebSettings.getDefaultUserAgent(this));
                             } catch (Exception ignored) {
-                                input.setText(UA_CHROME_MOBILE);
+                                input.setText(UA_ANDROID_CHROME);
                             }
                             break;
                     }
