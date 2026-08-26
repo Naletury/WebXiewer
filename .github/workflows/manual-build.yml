@@ -1,0 +1,123 @@
+name: Manual Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      major:
+        description: 'Major version'
+        required: true
+        type: number
+      minor:
+        description: 'Minor version'
+        required: true
+        type: number
+      type:
+        description: 'Release type'
+        required: true
+        type: choice
+        options:
+          - release
+          - alpha
+          - beta
+          - patch
+      number:
+        description: 'Version number (0 for release)'
+        required: true
+        type: number
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          dependency-graph: generate-and-upload
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+          gradle-home-cache-cleanup: true
+
+      - name: Generate version info
+        id: version
+        run: |
+          MAJOR="${{ github.event.inputs.major }}"
+          MINOR="${{ github.event.inputs.minor }}"
+          TYPE="${{ github.event.inputs.type }}"
+          NUMBER="${{ github.event.inputs.number }}"
+          DATE=$(date +"%m%d")
+          
+          case "$TYPE" in
+            release) TYPE_CODE=0 ;;
+            alpha)   TYPE_CODE=1 ;;
+            beta)    TYPE_CODE=2 ;;
+            patch)   TYPE_CODE=0 ;;
+          esac
+          
+          if [ "$TYPE" = "release" ]; then
+            BASE_NAME="${MAJOR}.${MINOR}-release"
+          else
+            BASE_NAME="${MAJOR}.${MINOR}-${TYPE}${NUMBER}"
+          fi
+          
+          VERSION_NAME="${BASE_NAME}-${DATE}"
+          
+          VERSION_CODE_RAW="${MAJOR}${MINOR}${TYPE_CODE}$(printf "%02d" "$NUMBER")"
+          VERSION_CODE=$((10#$VERSION_CODE_RAW))
+          
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "base=$BASE_NAME" >> "$GITHUB_OUTPUT"
+          echo "date=$DATE" >> "$GITHUB_OUTPUT"
+          echo "type=$TYPE" >> "$GITHUB_OUTPUT"
+
+      - name: Build Debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug \
+            -PVERSION_CODE=${{ steps.version.outputs.code }} \
+            -PVERSION_NAME=${{ steps.version.outputs.name }} \
+            --parallel --build-cache
+
+      - name: Verify and rename APK
+        id: apk
+        run: |
+          APK_SRC=$(find app/build/outputs/apk -name "*.apk" | head -1)
+          if [ -z "$APK_SRC" ]; then
+            echo "Error: No APK found"
+            echo "Contents of app/build/outputs/apk:"
+            ls -la app/build/outputs/apk/ || true
+            find app/build -name "*.apk" || true
+            exit 1
+          fi
+          echo "Found APK: $APK_SRC"
+          echo "path=$APK_SRC" >> "$GITHUB_OUTPUT"
+          
+          APK_DST="app/build/outputs/apk/debug/app-debug.apk"
+          if [ "$APK_SRC" != "$APK_DST" ]; then
+            mkdir -p "$(dirname "$APK_DST")"
+            cp "$APK_SRC" "$APK_DST"
+            echo "Renamed to: $APK_DST"
+          else
+            echo "Already at correct path: $APK_DST"
+          fi
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.name }}-debug-${{ steps.version.outputs.date }}
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 7
+          

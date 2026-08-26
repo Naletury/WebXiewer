@@ -1,0 +1,206 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          dependency-graph: generate
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+          gradle-home-cache-cleanup: true
+
+      - name: Parse version from tag
+        id: version
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          
+          if [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)r$ ]]; then
+            MAJOR="${BASH_REMATCH[1]}"
+            MINOR="${BASH_REMATCH[2]}"
+            TYPE="release"
+            TYPE_CODE=0
+            NUMBER=0
+            VERSION_NAME="${MAJOR}.${MINOR}-release"
+            CODE_MAJOR="$MAJOR"
+            CODE_MINOR="$MINOR"
+          elif [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)a([0-9]+)$ ]]; then
+            MAJOR="${BASH_REMATCH[1]}"
+            MINOR="${BASH_REMATCH[2]}"
+            NUMBER="${BASH_REMATCH[3]}"
+            TYPE="alpha"
+            TYPE_CODE=1
+            VERSION_NAME="${MAJOR}.${MINOR}-alpha${NUMBER}"
+            CODE_MAJOR="$MAJOR"
+            CODE_MINOR="$MINOR"
+            if [ "$CODE_MINOR" -eq 0 ] && [ "$CODE_MAJOR" -eq 0 ]; then
+              echo "Error: cannot decrement version (v0.0-alpha)"
+              exit 1
+            fi
+            if [ "$CODE_MINOR" -eq 0 ]; then
+              CODE_MAJOR=$((CODE_MAJOR - 1))
+              CODE_MINOR=9
+            else
+              CODE_MINOR=$((CODE_MINOR - 1))
+            fi
+          elif [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)b([0-9]+)$ ]]; then
+            MAJOR="${BASH_REMATCH[1]}"
+            MINOR="${BASH_REMATCH[2]}"
+            NUMBER="${BASH_REMATCH[3]}"
+            TYPE="beta"
+            TYPE_CODE=2
+            VERSION_NAME="${MAJOR}.${MINOR}-beta${NUMBER}"
+            CODE_MAJOR="$MAJOR"
+            CODE_MINOR="$MINOR"
+            if [ "$CODE_MINOR" -eq 0 ] && [ "$CODE_MAJOR" -eq 0 ]; then
+              echo "Error: cannot decrement version (v0.0-beta)"
+              exit 1
+            fi
+            if [ "$CODE_MINOR" -eq 0 ]; then
+              CODE_MAJOR=$((CODE_MAJOR - 1))
+              CODE_MINOR=9
+            else
+              CODE_MINOR=$((CODE_MINOR - 1))
+            fi
+          elif [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)p([0-9]+)$ ]]; then
+            MAJOR="${BASH_REMATCH[1]}"
+            MINOR="${BASH_REMATCH[2]}"
+            NUMBER="${BASH_REMATCH[3]}"
+            if [ "$NUMBER" -eq 0 ]; then
+              echo "Error: patch number cannot be 0"
+              exit 1
+            fi
+            TYPE="patch"
+            TYPE_CODE=0
+            VERSION_NAME="${MAJOR}.${MINOR}-patch${NUMBER}"
+            CODE_MAJOR="$MAJOR"
+            CODE_MINOR="$MINOR"
+          else
+            echo "Error: unrecognized version format: $TAG"
+            exit 1
+          fi
+          
+          case "$TYPE" in
+            release) NUMBER_PAD="00" ;;
+            *)       NUMBER_PAD=$(printf "%02d" "$NUMBER") ;;
+          esac
+          
+          VERSION_CODE_RAW="${CODE_MAJOR}${CODE_MINOR}${TYPE_CODE}${NUMBER_PAD}"
+          VERSION_CODE=$((10#$VERSION_CODE_RAW))
+          
+          echo "name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "type=$TYPE" >> "$GITHUB_OUTPUT"
+
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
+
+      - name: Build Release APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease \
+            -PVERSION_CODE=${{ steps.version.outputs.code }} \
+            -PVERSION_NAME=${{ steps.version.outputs.name }} \
+            --parallel --build-cache
+
+      - name: Find and verify APK
+        id: apk
+        run: |
+          APK_PATH=$(find app/build/outputs/apk -name "*.apk" | head -1)
+          if [ -z "$APK_PATH" ]; then
+            echo "Error: No APK found"
+            echo "Contents of app/build/outputs/apk:"
+            ls -la app/build/outputs/apk/ || true
+            find app/build -name "*.apk" || true
+            exit 1
+          fi
+          echo "Found APK: $APK_PATH"
+          echo "path=$APK_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.name }}
+          path: ${{ steps.apk.outputs.path }}
+          retention-days: 7
+
+      - name: Check if prerelease
+        id: prerelease
+        run: |
+          if [[ "${{ steps.version.outputs.type }}" == "alpha" ]] || [[ "${{ steps.version.outputs.type }}" == "beta" ]]; then
+            echo "value=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate release notes
+        id: notes
+        run: |
+          CURRENT_TAG="${{ github.ref_name }}"
+          PREV_TAG=$(git tag --sort=-creatordate | grep -A1 "^$CURRENT_TAG$" | tail -1)
+          if [ "$PREV_TAG" = "$CURRENT_TAG" ] || [ -z "$PREV_TAG" ]; then
+            PREV_TAG=""
+          fi
+
+          if [ -z "$PREV_TAG" ]; then
+            COMMITS=$(git log --pretty=format:"%s" HEAD)
+          else
+            COMMITS=$(git log --pretty=format:"%s" "$PREV_TAG"..HEAD)
+          fi
+
+          COMMITS=$(echo "$COMMITS" | sed '/^release:/d')
+
+          {
+            echo "### What's Changed"
+            echo ""
+            echo "$COMMITS" | sort | sed 's/^/- /'
+            echo ""
+            echo "---"
+            echo ""
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/$PREV_TAG...${{ github.ref_name }}"
+          } > release_notes.md
+
+          echo "content<<EOF" >> $GITHUB_OUTPUT
+          cat release_notes.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ steps.version.outputs.name }}
+          body: ${{ steps.notes.outputs.content }}
+          files: ${{ steps.apk.outputs.path }}
+          draft: false
+          prerelease: ${{ steps.prerelease.outputs.value }}
+          make_latest: true
+          

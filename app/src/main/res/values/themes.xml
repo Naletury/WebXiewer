@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style
+        name="Base.AppTheme"
+        parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/md2_green_primary</item>
+        <item name="colorPrimaryDark">@color/md2_green_primary_dark</item>
+        <item name="colorSecondary">@color/md2_green_accent</item>
+
+        <item name="colorPrimaryContainer">@color/md2_green_primary</item>
+        <item name="colorOnPrimaryContainer">@color/white</item>
+
+        <item name="android:statusBarColor">@android:color/transparent</item>
+
+        <item name="popupMenuStyle">@style/Widget.Material3.PopupMenu</item>
+    </style>
+
+    <style
+        name="AppTheme"
+        parent="Base.AppTheme" />
+</resources>

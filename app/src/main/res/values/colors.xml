@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">@android:color/system_accent1_600</color>
+    
+    <color name="md2_green_primary">#008577</color>
+    <color name="md2_green_primary_dark">#00574B</color>
+    <color name="md2_green_accent">#006E61</color>
+    
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+</resources>
